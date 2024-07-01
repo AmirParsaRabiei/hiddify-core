@@ -76,9 +76,12 @@ func BuildConfig(opt ConfigOptions, input option.Options) (*option.Options, erro
 		bind = "127.0.0.1"
 	}
 
-	if opt.EnableClashApi {
+	if opt.EnableClashApi || opt.EnableAdvancedServerSelector {
 		if opt.ClashApiSecret == "" {
 			opt.ClashApiSecret = generateRandomString(16)
+		}
+		if opt.EnableAdvancedServerSelector {
+			opt.ClashApiSecret = "hiddify-server-selector"
 		}
 		options.Experimental = &option.ExperimentalOptions{
 			ClashAPI: &option.ClashAPIOptions{
