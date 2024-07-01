@@ -5,7 +5,7 @@ PKG_VERSION:=1.2.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=https://codeload.github.com/hiddify/hiddify-core/tar.gz/v$(PKG_VERSION)?
+PKG_SOURCE_URL:=https://codeload.github.com/PacketCipher/hiddify-core/tar.gz/v$(PKG_VERSION)?
 PKG_HASH:=481098a29b0b08d225598e5e74eddfe4cbdd4560b7ac74d210dcc923792a3e24
 
 PKG_LICENSE:=https://github.com/hiddify/hiddify-next/edit/main/LICENSE.md
@@ -16,7 +16,7 @@ PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_PARALLEL:=1
 PKG_BUILD_FLAGS:=no-mips16
 
-GO_PKG:=github.com/hiddify/hiddify-core
+GO_PKG:=github.com/PacketCipher/hiddify-core
 GO_PKG_BUILD_PKG:=$(GO_PKG)/cli
 
 GO_PKG_LDFLAGS_X:=$(GO_PKG)/constant.Version=$(PKG_VERSION)

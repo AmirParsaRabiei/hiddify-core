@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hiddify/hiddify-core/bridge"
-	pb "github.com/hiddify/hiddify-core/hiddifyrpc"
+	"github.com/PacketCipher/hiddify-core/bridge"
+	pb "github.com/PacketCipher/hiddify-core/hiddifyrpc"
 )
 
 var coreInfoObserver = NewObserver[pb.CoreInfoResponse](10)

@@ -13,12 +13,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hiddify/hiddify-core/config"
-	pb "github.com/hiddify/hiddify-core/hiddifyrpc"
+	"github.com/PacketCipher/hiddify-core/config"
+	pb "github.com/PacketCipher/hiddify-core/hiddifyrpc"
 
 	"github.com/sagernet/sing-box/option"
 	// Import the server-selector package
-	_ "github.com/PacketCipher/hiddify-core/server_selector"
+	"github.com/PacketCipher/hiddify-core/server_selector"
 )
 
 func RunStandalone(hiddifySettingPath string, configPath string, defaultConfig config.ConfigOptions) error {
@@ -42,7 +42,7 @@ func RunStandalone(hiddifySettingPath string, configPath string, defaultConfig c
 	// Start the server-selector
 	stopServerSelector := make(chan struct{})
 	go func() {
-		serverSelector.MainLoop(serverSelector.GetLightMode(), stopServerSelector)
+		server_selector.MainLoop(server_selector.GetLightMode(), stopServerSelector)
 	}()
 
 	sigChan := make(chan os.Signal, 1)

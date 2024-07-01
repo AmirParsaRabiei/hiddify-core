@@ -1,7 +1,7 @@
 package v2
 
 import (
-	pb "github.com/hiddify/hiddify-core/hiddifyrpc"
+	pb "github.com/PacketCipher/hiddify-core/hiddifyrpc"
 
 	"github.com/sagernet/sing-box/experimental/libbox"
 	"github.com/sagernet/sing-box/log"

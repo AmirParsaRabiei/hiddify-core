@@ -3,7 +3,7 @@ package v2
 import (
 	"context"
 
-	pb "github.com/hiddify/hiddify-core/hiddifyrpc"
+	pb "github.com/PacketCipher/hiddify-core/hiddifyrpc"
 	"github.com/sagernet/sing-box/experimental/libbox"
 )
 

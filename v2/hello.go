@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	pb "github.com/hiddify/hiddify-core/hiddifyrpc"
+	pb "github.com/PacketCipher/hiddify-core/hiddifyrpc"
 )
 
 func (s *HelloService) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloResponse, error) {
