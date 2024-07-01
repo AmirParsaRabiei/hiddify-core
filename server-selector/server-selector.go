@@ -362,7 +362,9 @@ func mainLoop(lightMode bool, stop <-chan struct{}) {
 			proxies, err := getProxies()
 			if err != nil {
 				fmt.Printf("An error occurred: %v\n", err)
-				time.Sleep(5 * time.Minute)
+				if !interruptibleSleep(5*time.Minute, stop) {
+					return
+				}
 				fmt.Println("Restarting The Loop...")
 				continue
 			}
@@ -397,10 +399,26 @@ func mainLoop(lightMode bool, stop <-chan struct{}) {
 					if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
 						fmt.Printf("Error during fallback: %v\n", err)
 					}
-					time.Sleep(checkInterval)
+					if !interruptibleSleep(checkInterval, stop) {
+						return
+					}
 				}
 			}
 		}
+	}
+}
+
+func interruptibleSleep(d time.Duration, stop <-chan struct{}) bool {
+	timer := time.NewTimer(d)
+	select {
+	case <-timer.C:
+		return true
+	case <-stop:
+		if !timer.Stop() {
+			<-timer.C
+		}
+		fmt.Println("Sleep interrupted, stopping...")
+		return false
 	}
 }
 
