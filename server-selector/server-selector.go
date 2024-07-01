@@ -7,10 +7,12 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -221,34 +223,51 @@ func getRealDelaySingle(proxyName string) float64 {
 	return float64(timeout.Milliseconds())
 }
 
-func updateDelayInfo(proxies map[string]Proxy, samplingType string) {
+func updateDelayInfo(proxies map[string]Proxy, samplingType string, stop <-chan struct{}) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex // Mutex to protect the map
 
 	for name, proxy := range proxies {
-		if proxy.Type == "VLESS" || proxy.Type == "Trojan" || proxy.Type == "Shadowsocks" || proxy.Type == "VMess" || proxy.Type == "TUIC" || proxy.Type == "WireGuard" {
-			wg.Add(1)
-			go func(name string, proxy Proxy) {
-				defer wg.Done()
-				if samplingType == "multi" {
-					delay := getRealDelayMulti(name)
-					mu.Lock() // Lock before updating the map
-					proxy.DelayMulti = delay
-					proxies[name] = proxy
-					mu.Unlock() // Unlock after updating
-					fmt.Printf("Updated multi delay for %s: %.2f ms\n", name, delay)
-				} else if samplingType == "single" {
-					delay := getRealDelaySingle(name)
-					mu.Lock() // Lock before updating the map
-					proxy.DelaySingle = delay
-					proxies[name] = proxy
-					mu.Unlock() // Unlock after updating
-					fmt.Printf("Updated single delay for %s: %.2f ms\n", name, delay)
-				}
-			}(name, proxy)
+		select {
+		case <-stop:
+			return // Exit immediately if stop signal is received
+		default:
+			if proxy.Type == "VLESS" || proxy.Type == "Trojan" || proxy.Type == "Shadowsocks" || proxy.Type == "VMess" || proxy.Type == "TUIC" || proxy.Type == "WireGuard" {
+				wg.Add(1)
+				go func(name string, proxy Proxy) {
+					defer wg.Done()
+					if samplingType == "multi" {
+						delay := getRealDelayMulti(name)
+						mu.Lock() // Lock before updating the map
+						proxy.DelayMulti = delay
+						proxies[name] = proxy
+						mu.Unlock() // Unlock after updating
+						fmt.Printf("Updated multi delay for %s: %.2f ms\n", name, delay)
+					} else if samplingType == "single" {
+						delay := getRealDelaySingle(name)
+						mu.Lock() // Lock before updating the map
+						proxy.DelaySingle = delay
+						proxies[name] = proxy
+						mu.Unlock() // Unlock after updating
+						fmt.Printf("Updated single delay for %s: %.2f ms\n", name, delay)
+					}
+				}(name, proxy)
+			}
 		}
 	}
-	wg.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-stop:
+		return // Exit if stop signal is received
+	case <-done:
+		return // Exit when all goroutines are done
+	}
 }
 
 // Todo Function: Sort Proxies by least number of Timeouts
@@ -333,46 +352,68 @@ func fallbackToWorkingProxyByOrder(sortedProxies []Proxy) error {
 	return nil
 }
 
-func mainLoop(lightMode bool) {
+func mainLoop(lightMode bool, stop <-chan struct{}) {
 	for {
-		proxies, err := getProxies()
-		if err != nil {
-			fmt.Printf("An error occurred: %v\n", err)
-			time.Sleep(5 * time.Minute)
-			fmt.Println("Restarting The Loop...")
-			continue
-		}
-
-		fmt.Printf("Fetched %d Proxies!\n", len(proxies))
-
-		var sortedProxies []Proxy
-		if lightMode {
-			updateDelayInfo(proxies, "single")
-			workingProxies := filterSingleWorkingProxies(proxies)
-			if len(workingProxies) > lightmodeMaximumServers {
-				workingProxies = workingProxies[:lightmodeMaximumServers]
+		select {
+		case <-stop:
+			fmt.Println("Stopping main loop...")
+			return
+		default:
+			proxies, err := getProxies()
+			if err != nil {
+				fmt.Printf("An error occurred: %v\n", err)
+				time.Sleep(5 * time.Minute)
+				fmt.Println("Restarting The Loop...")
+				continue
 			}
-			workingProxiesMap := make(map[string]Proxy)
-			for _, proxy := range workingProxies {
-				workingProxiesMap[proxy.Name] = proxy
-			}
-			updateDelayInfo(workingProxiesMap, "multi")
-			sortedProxies = sortProxiesByDelay(workingProxiesMap, "multi")
-		} else {
-			updateDelayInfo(proxies, "multi")
-			sortedProxies = sortProxiesByDelay(proxies, "multi")
-		}
 
-		startTime := time.Now()
-		for time.Since(startTime) < updateInterval {
-			if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
-				fmt.Printf("Error during fallback: %v\n", err)
+			fmt.Printf("Fetched %d Proxies!\n", len(proxies))
+
+			var sortedProxies []Proxy
+			if lightMode {
+				updateDelayInfo(proxies, "single", stop)
+				workingProxies := filterSingleWorkingProxies(proxies)
+				if len(workingProxies) > lightmodeMaximumServers {
+					workingProxies = workingProxies[:lightmodeMaximumServers]
+				}
+				workingProxiesMap := make(map[string]Proxy)
+				for _, proxy := range workingProxies {
+					workingProxiesMap[proxy.Name] = proxy
+				}
+				updateDelayInfo(workingProxiesMap, "multi", stop)
+				sortedProxies = sortProxiesByDelay(workingProxiesMap, "multi")
+			} else {
+				updateDelayInfo(proxies, "multi", stop)
+				sortedProxies = sortProxiesByDelay(proxies, "multi")
 			}
-			time.Sleep(checkInterval)
+
+			startTime := time.Now()
+			for time.Since(startTime) < updateInterval {
+				select {
+				case <-stop:
+					fmt.Println("Stopping main loop...")
+					return
+				default:
+					if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
+						fmt.Printf("Error during fallback: %v\n", err)
+					}
+					time.Sleep(checkInterval)
+				}
+			}
 		}
 	}
 }
 
 func main() {
-	mainLoop(lightMode)
+	stop := make(chan struct{})
+	go func() {
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+		<-sigint
+		fmt.Println("Received interrupt signal. Shutting down...")
+		close(stop)
+	}()
+
+	mainLoop(lightMode, stop)
+	fmt.Println("Program exited gracefully")
 }
