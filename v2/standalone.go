@@ -17,6 +17,7 @@ import (
 	pb "github.com/hiddify/hiddify-core/hiddifyrpc"
 
 	"github.com/sagernet/sing-box/option"
+	// Import the server-selector package
 )
 
 func RunStandalone(hiddifySettingPath string, configPath string, defaultConfig config.ConfigOptions) error {
@@ -28,6 +29,7 @@ func RunStandalone(hiddifySettingPath string, configPath string, defaultConfig c
 		return err
 	}
 
+	// Start the main service
 	go StartService(&pb.StartRequest{
 		ConfigContent:          current.Config,
 		EnableOldCommandServer: false,
@@ -36,12 +38,26 @@ func RunStandalone(hiddifySettingPath string, configPath string, defaultConfig c
 	})
 	go updateConfigInterval(current, hiddifySettingPath, configPath)
 
+	// Start the server-selector
+	stopServerSelector := make(chan struct{})
+	go func() {
+		serverSelector.MainLoop(serverSelector.GetLightMode(), stopServerSelector)
+	}()
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	fmt.Printf("Waiting for CTRL+C to stop\n")
 	<-sigChan
-	fmt.Printf("CTRL+C recived-->stopping\n")
+	fmt.Printf("CTRL+C received --> stopping\n")
+
+	// Stop the server-selector
+	close(stopServerSelector)
+
+	// Wait for server-selector to stop (you might want to add a timeout here)
+	time.Sleep(5 * time.Second)
+
+	// Stop the main service
 	_, err = Stop()
 
 	return err
