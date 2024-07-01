@@ -352,7 +352,7 @@ func fallbackToWorkingProxyByOrder(sortedProxies []Proxy) error {
 	return nil
 }
 
-func mainLoop(lightMode bool, stop <-chan struct{}) {
+func MainLoop(stop <-chan struct{}) {
 	for {
 		select {
 		case <-stop:
@@ -432,6 +432,6 @@ func main() {
 		close(stop)
 	}()
 
-	mainLoop(lightMode, stop)
+	MainLoop(stop)
 	fmt.Println("Program exited gracefully")
 }

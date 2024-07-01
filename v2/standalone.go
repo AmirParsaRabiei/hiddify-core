@@ -39,16 +39,19 @@ func RunStandalone(hiddifySettingPath string, configPath string, defaultConfig c
 	})
 	go updateConfigInterval(current, hiddifySettingPath, configPath)
 
-	// Start the server-selector
-	stopServerSelector := make(chan struct{})
-	go func() {
-		server_selector.MainLoop(server_selector.GetLightMode(), stopServerSelector)
-	}()
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
+	// Start the server-selector
+	time.Sleep(10 * time.Second)
+	stopServerSelector := make(chan struct{})
+	go func() {
+		server_selector.MainLoop(stopServerSelector)
+	}()
+	fmt.Printf("Advanced Server Selector Started!\n")
+
 	fmt.Printf("Waiting for CTRL+C to stop\n")
+
 	<-sigChan
 	fmt.Printf("CTRL+C received --> stopping\n")
 
