@@ -18,6 +18,7 @@ import (
 
 	"github.com/sagernet/sing-box/option"
 	// Import the server-selector package
+	_ "github.com/PacketCipher/hiddify-core/server_selector"
 )
 
 func RunStandalone(hiddifySettingPath string, configPath string, defaultConfig config.ConfigOptions) error {
