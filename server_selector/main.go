@@ -53,8 +53,8 @@ func init() {
 	retries = getEnvInt("RETRIES", 12)
 	retryDelay = time.Duration(getEnvInt("RETRY_DELAY", 5)) * time.Second
 	minUptime = float64(getEnvInt("MIN_UPTIME", 100))
-	checkInterval = time.Duration(getEnvInt("CHECK_INTERVAL", 30)) * time.Second
-	updateInterval = time.Duration(getEnvInt("UPDATE_INTERVAL", 30)) * time.Minute
+	checkInterval = time.Duration(getEnvInt("CHECK_INTERVAL", 60)) * time.Second
+	updateInterval = time.Duration(getEnvInt("UPDATE_INTERVAL", 10)) * time.Minute
 	lightmodeMaximumServers = getEnvInt("LIGHTMODE_MAXIMUM_SERVERS", 30)
 	proxyGroupName = getEnv("PROXY_GROUP_NAME", "select")
 	lightMode = getEnvBool("LIGHT_MODE", false)
