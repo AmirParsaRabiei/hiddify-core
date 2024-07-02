@@ -281,6 +281,16 @@ func sortProxiesByDelay(proxies map[string]Proxy, samplingType string) []Proxy {
 	}
 
 	if samplingType == "multi" {
+		// Filter out proxies with DelayMulti equal to math.Inf(1)
+		var filteredProxies []Proxy
+		for _, proxy := range sortableProxies {
+			if proxy.DelayMulti != math.Inf(1) {
+				filteredProxies = append(filteredProxies, proxy)
+			}
+		}
+		sortableProxies = filteredProxies
+
+		// Sort the filtered proxies
 		sort.Slice(sortableProxies, func(i, j int) bool {
 			return sortableProxies[i].DelayMulti < sortableProxies[j].DelayMulti
 		})
