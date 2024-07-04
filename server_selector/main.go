@@ -53,11 +53,11 @@ func init() {
 	retries = getEnvInt("RETRIES", 12)
 	retryDelay = time.Duration(getEnvInt("RETRY_DELAY", 5)) * time.Second
 	minUptime = float64(getEnvInt("MIN_UPTIME", 100))
-	checkInterval = time.Duration(getEnvInt("CHECK_INTERVAL", 30)) * time.Second
-	updateInterval = time.Duration(getEnvInt("UPDATE_INTERVAL", 30)) * time.Minute
+	checkInterval = time.Duration(getEnvInt("CHECK_INTERVAL", 60)) * time.Second
+	updateInterval = time.Duration(getEnvInt("UPDATE_INTERVAL", 60)) * time.Minute
 	lightmodeMaximumServers = getEnvInt("LIGHTMODE_MAXIMUM_SERVERS", 30)
 	proxyGroupName = getEnv("PROXY_GROUP_NAME", "select")
-	lightMode = getEnvBool("LIGHT_MODE", false)
+	lightMode = getEnvBool("LIGHT_MODE", true)
 }
 
 func getEnv(key, defaultValue string) string {
@@ -191,7 +191,7 @@ func getRealDelayMulti(proxyName string) float64 {
 
 func getRealDelaySingle(proxyName string) float64 {
 	client := &http.Client{Timeout: timeout}
-	numberOfAttempts := 3
+	numberOfAttempts := 1
 
 	for attempt := 0; attempt < numberOfAttempts; attempt++ {
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s/proxies/%s/delay?timeout=%d&url=%s", apiURL, proxyName, int(timeout.Milliseconds()), testURL), nil)
@@ -281,6 +281,16 @@ func sortProxiesByDelay(proxies map[string]Proxy, samplingType string) []Proxy {
 	}
 
 	if samplingType == "multi" {
+		// Filter out proxies with DelayMulti equal to math.Inf(1)
+		var filteredProxies []Proxy
+		for _, proxy := range sortableProxies {
+			if proxy.DelayMulti != math.Inf(1) {
+				filteredProxies = append(filteredProxies, proxy)
+			}
+		}
+		sortableProxies = filteredProxies
+
+		// Sort the filtered proxies
 		sort.Slice(sortableProxies, func(i, j int) bool {
 			return sortableProxies[i].DelayMulti < sortableProxies[j].DelayMulti
 		})

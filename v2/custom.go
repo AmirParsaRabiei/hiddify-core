@@ -69,6 +69,11 @@ func Start(in *pb.StartRequest) (*pb.CoreInfoResponse, error) {
 func (s *CoreService) StartService(ctx context.Context, in *pb.StartRequest) (*pb.CoreInfoResponse, error) {
 	return StartService(in)
 }
+
+// func StartService(in *pb.StartRequest) (*pb.CoreInfoResponse, error) {
+// 	response, err = StartService_Core(in)
+// }
+
 func StartService(in *pb.StartRequest) (*pb.CoreInfoResponse, error) {
 	Log(pb.LogLevel_DEBUG, pb.LogType_CORE, "Starting Core Service")
 	content := in.ConfigContent
