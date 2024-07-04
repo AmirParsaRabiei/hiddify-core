@@ -14,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/pbnjay/memory"
 )
 
 // Configuration variables
@@ -227,6 +229,14 @@ func updateDelayInfo(proxies map[string]Proxy, samplingType string, stop <-chan 
 	var wg sync.WaitGroup
 	var mu sync.Mutex // Mutex to protect the map
 
+	totalMemory := memory.TotalMemory()
+	maxParallelChecks := len(proxies)
+	if totalMemory < 512*1024*1024 { // 512MB
+		maxParallelChecks = 10
+	}
+
+	sem := make(chan struct{}, maxParallelChecks)
+
 	for name, proxy := range proxies {
 		select {
 		case <-stop:
@@ -235,7 +245,12 @@ func updateDelayInfo(proxies map[string]Proxy, samplingType string, stop <-chan 
 			if proxy.Type == "VLESS" || proxy.Type == "Trojan" || proxy.Type == "Shadowsocks" || proxy.Type == "VMess" || proxy.Type == "TUIC" || proxy.Type == "WireGuard" {
 				wg.Add(1)
 				go func(name string, proxy Proxy) {
-					defer wg.Done()
+					sem <- struct{}{} // Acquire semaphore
+					defer func() {
+						<-sem // Release semaphore
+						wg.Done()
+					}()
+
 					if samplingType == "multi" {
 						delay := getRealDelayMulti(name)
 						mu.Lock() // Lock before updating the map
