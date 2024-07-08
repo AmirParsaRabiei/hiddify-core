@@ -32,6 +32,8 @@ var (
 	lightmodeMaximumServers int
 	proxyGroupName          string
 	lightMode               bool
+	disableUpdateInterval   bool
+	maxParallelChecks       int
 )
 
 // Proxy represents a proxy server
@@ -40,6 +42,7 @@ type Proxy struct {
 	Type        string
 	DelayMulti  float64
 	DelaySingle float64
+	Timeouts    int // New field to track timeouts
 }
 
 // ProxyResponse represents the response from the API
@@ -54,12 +57,23 @@ func init() {
 	timeout = time.Duration(getEnvInt("TIMEOUT", 5000)) * time.Millisecond
 	retries = getEnvInt("RETRIES", 12)
 	retryDelay = time.Duration(getEnvInt("RETRY_DELAY", 5)) * time.Second
-	minUptime = float64(getEnvInt("MIN_UPTIME", 100))
+	minUptime = float64(getEnvInt("MIN_UPTIME", 50))
 	checkInterval = time.Duration(getEnvInt("CHECK_INTERVAL", 60)) * time.Second
 	updateInterval = time.Duration(getEnvInt("UPDATE_INTERVAL", 60)) * time.Minute
 	lightmodeMaximumServers = getEnvInt("LIGHTMODE_MAXIMUM_SERVERS", 30)
 	proxyGroupName = getEnv("PROXY_GROUP_NAME", "select")
 	lightMode = getEnvBool("LIGHT_MODE", true)
+
+	totalMemory := memory.TotalMemory()
+	disableUpdateInterval = totalMemory < 512*1024*1024
+	if disableUpdateInterval {
+		fmt.Println("Low memory detected. Update interval disabled.")
+	}
+
+	maxParallelChecks = 30           // Default value
+	if totalMemory < 512*1024*1024 { // 512MB
+		maxParallelChecks = 10
+	}
 }
 
 func getEnv(key, defaultValue string) string {
@@ -122,8 +136,9 @@ func getProxies() (map[string]Proxy, error) {
 	return proxyResp.Proxies, nil
 }
 
-func getRealDelayMulti(proxyName string) float64 {
+func getRealDelayMulti(proxyName string) (float64, int) {
 	delays := make([]float64, 0, retries)
+	timeouts := 0
 	client := &http.Client{Timeout: timeout}
 
 	for i := 0; i < retries; i++ {
@@ -131,6 +146,7 @@ func getRealDelayMulti(proxyName string) float64 {
 		if err != nil {
 			fmt.Printf("Error creating request for %s: %v\n", proxyName, err)
 			delays = append(delays, float64(timeout.Milliseconds()))
+			timeouts++
 			continue
 		}
 		req.Header = getHeaders()
@@ -138,8 +154,8 @@ func getRealDelayMulti(proxyName string) float64 {
 		start := time.Now()
 		resp, err := client.Do(req)
 		if err != nil {
-			// fmt.Printf("Error getting delay for %s: %v\n", proxyName, err)
 			delays = append(delays, float64(timeout.Milliseconds()))
+			timeouts++
 		} else {
 			elapsed := time.Since(start)
 			defer resp.Body.Close()
@@ -155,16 +171,11 @@ func getRealDelayMulti(proxyName string) float64 {
 				}
 			} else {
 				delays = append(delays, float64(timeout.Milliseconds()))
+				timeouts++
 			}
 		}
 
-		timeoutCount := 0
-		for _, d := range delays {
-			if d >= float64(timeout.Milliseconds()) {
-				timeoutCount++
-			}
-		}
-		if float64(timeoutCount) > float64(retries)*(1-minUptime/100) {
+		if float64(timeouts) > float64(retries)*(1-minUptime/100) {
 			break
 		}
 
@@ -184,11 +195,11 @@ func getRealDelayMulti(proxyName string) float64 {
 			}
 		}
 		if float64(count) >= float64(retries)*(minUptime/100) {
-			return sum / float64(count)
+			return sum / float64(count), timeouts
 		}
 	}
 
-	return math.Inf(1)
+	return math.Inf(1), timeouts
 }
 
 func getRealDelaySingle(proxyName string) float64 {
@@ -229,12 +240,6 @@ func updateDelayInfo(proxies map[string]Proxy, samplingType string, stop <-chan 
 	var wg sync.WaitGroup
 	var mu sync.Mutex // Mutex to protect the map
 
-	totalMemory := memory.TotalMemory()
-	maxParallelChecks := len(proxies)
-	if totalMemory < 512*1024*1024 { // 512MB
-		maxParallelChecks = 10
-	}
-
 	sem := make(chan struct{}, maxParallelChecks)
 
 	for name, proxy := range proxies {
@@ -252,12 +257,13 @@ func updateDelayInfo(proxies map[string]Proxy, samplingType string, stop <-chan 
 					}()
 
 					if samplingType == "multi" {
-						delay := getRealDelayMulti(name)
+						delay, timeouts := getRealDelayMulti(name)
 						mu.Lock() // Lock before updating the map
 						proxy.DelayMulti = delay
+						proxy.Timeouts = timeouts
 						proxies[name] = proxy
 						mu.Unlock() // Unlock after updating
-						fmt.Printf("Updated multi delay for %s: %.2f ms\n", name, delay)
+						fmt.Printf("Updated multi delay for %s: %.2f ms, timeouts: %d\n", name, delay, timeouts)
 					} else if samplingType == "single" {
 						delay := getRealDelaySingle(name)
 						mu.Lock() // Lock before updating the map
@@ -284,9 +290,6 @@ func updateDelayInfo(proxies map[string]Proxy, samplingType string, stop <-chan 
 		return // Exit when all goroutines are done
 	}
 }
-
-// Todo Function: Sort Proxies by least number of Timeouts
-
 func sortProxiesByDelay(proxies map[string]Proxy, samplingType string) []Proxy {
 	var sortableProxies []Proxy
 	for _, proxy := range proxies {
@@ -314,6 +317,26 @@ func sortProxiesByDelay(proxies map[string]Proxy, samplingType string) []Proxy {
 			return sortableProxies[i].DelaySingle < sortableProxies[j].DelaySingle
 		})
 	}
+
+	return sortableProxies
+}
+func sortProxiesByTimeoutAndDelay(proxies map[string]Proxy) []Proxy {
+	var sortableProxies []Proxy
+	for _, proxy := range proxies {
+		if proxy.Type == "VLESS" || proxy.Type == "Trojan" || proxy.Type == "Shadowsocks" || proxy.Type == "VMess" || proxy.Type == "TUIC" || proxy.Type == "WireGuard" {
+			if proxy.DelayMulti != math.Inf(1) {
+				sortableProxies = append(sortableProxies, proxy)
+			}
+		}
+	}
+
+	// Sort proxies by number of timeouts (ascending) and then by DelayMulti (ascending)
+	sort.Slice(sortableProxies, func(i, j int) bool {
+		if sortableProxies[i].Timeouts != sortableProxies[j].Timeouts {
+			return sortableProxies[i].Timeouts < sortableProxies[j].Timeouts
+		}
+		return sortableProxies[i].DelayMulti < sortableProxies[j].DelayMulti
+	})
 
 	return sortableProxies
 }
@@ -408,24 +431,35 @@ func MainLoop(stop <-chan struct{}) {
 					workingProxiesMap[proxy.Name] = proxy
 				}
 				updateDelayInfo(workingProxiesMap, "multi", stop)
-				sortedProxies = sortProxiesByDelay(workingProxiesMap, "multi")
+				sortedProxies = sortProxiesByTimeoutAndDelay(workingProxiesMap)
 			} else {
 				updateDelayInfo(proxies, "multi", stop)
-				sortedProxies = sortProxiesByDelay(proxies, "multi")
+				sortedProxies = sortProxiesByTimeoutAndDelay(proxies)
 			}
 
-			startTime := time.Now()
-			for time.Since(startTime) < updateInterval {
-				select {
-				case <-stop:
-					fmt.Println("Stopping main loop...")
+			if disableUpdateInterval {
+				// If updateInterval is disabled, just perform one check and sleep
+				if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
+					fmt.Printf("Error during fallback: %v\n", err)
+				}
+				if !interruptibleSleep(checkInterval, stop) {
 					return
-				default:
-					if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
-						fmt.Printf("Error during fallback: %v\n", err)
-					}
-					if !interruptibleSleep(checkInterval, stop) {
+				}
+			} else {
+				// Original behavior with updateInterval
+				startTime := time.Now()
+				for time.Since(startTime) < updateInterval {
+					select {
+					case <-stop:
+						fmt.Println("Stopping main loop...")
 						return
+					default:
+						if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
+							fmt.Printf("Error during fallback: %v\n", err)
+						}
+						if !interruptibleSleep(checkInterval, stop) {
+							return
+						}
 					}
 				}
 			}
