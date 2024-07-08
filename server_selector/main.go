@@ -32,6 +32,8 @@ var (
 	lightmodeMaximumServers int
 	proxyGroupName          string
 	lightMode               bool
+	disableUpdateInterval   bool
+	maxParallelChecks       int
 )
 
 // Proxy represents a proxy server
@@ -60,6 +62,17 @@ func init() {
 	lightmodeMaximumServers = getEnvInt("LIGHTMODE_MAXIMUM_SERVERS", 30)
 	proxyGroupName = getEnv("PROXY_GROUP_NAME", "select")
 	lightMode = getEnvBool("LIGHT_MODE", true)
+
+	totalMemory := memory.TotalMemory()
+	disableUpdateInterval = totalMemory < 512*1024*1024
+	if disableUpdateInterval {
+		fmt.Println("Low memory detected. Update interval disabled.")
+	}
+
+	maxParallelChecks = 30           // Default value
+	if totalMemory < 512*1024*1024 { // 512MB
+		maxParallelChecks = 10
+	}
 }
 
 func getEnv(key, defaultValue string) string {
@@ -228,12 +241,6 @@ func getRealDelaySingle(proxyName string) float64 {
 func updateDelayInfo(proxies map[string]Proxy, samplingType string, stop <-chan struct{}) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex // Mutex to protect the map
-
-	totalMemory := memory.TotalMemory()
-	maxParallelChecks := len(proxies)
-	if totalMemory < 512*1024*1024 { // 512MB
-		maxParallelChecks = 10
-	}
 
 	sem := make(chan struct{}, maxParallelChecks)
 
@@ -414,18 +421,29 @@ func MainLoop(stop <-chan struct{}) {
 				sortedProxies = sortProxiesByDelay(proxies, "multi")
 			}
 
-			startTime := time.Now()
-			for time.Since(startTime) < updateInterval {
-				select {
-				case <-stop:
-					fmt.Println("Stopping main loop...")
+			if disableUpdateInterval {
+				// If updateInterval is disabled, just perform one check and sleep
+				if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
+					fmt.Printf("Error during fallback: %v\n", err)
+				}
+				if !interruptibleSleep(checkInterval, stop) {
 					return
-				default:
-					if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
-						fmt.Printf("Error during fallback: %v\n", err)
-					}
-					if !interruptibleSleep(checkInterval, stop) {
+				}
+			} else {
+				// Original behavior with updateInterval
+				startTime := time.Now()
+				for time.Since(startTime) < updateInterval {
+					select {
+					case <-stop:
+						fmt.Println("Stopping main loop...")
 						return
+					default:
+						if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
+							fmt.Printf("Error during fallback: %v\n", err)
+						}
+						if !interruptibleSleep(checkInterval, stop) {
+							return
+						}
 					}
 				}
 			}
