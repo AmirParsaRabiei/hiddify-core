@@ -62,17 +62,16 @@ func init() {
 	updateInterval = time.Duration(getEnvInt("UPDATE_INTERVAL", 60)) * time.Minute
 	lightmodeMaximumServers = getEnvInt("LIGHTMODE_MAXIMUM_SERVERS", 30)
 	proxyGroupName = getEnv("PROXY_GROUP_NAME", "select")
-	lightMode = getEnvBool("LIGHT_MODE", true)
+	lightMode = getEnvBool("LIGHT_MODE", false)
+	maxParallelChecks = 500
+	disableUpdateInterval = false
 
 	totalMemory := memory.TotalMemory()
-	disableUpdateInterval = totalMemory < 512*1024*1024
-	if disableUpdateInterval {
-		fmt.Println("Low memory detected. Update interval disabled.")
-	}
-
-	maxParallelChecks = 30           // Default value
-	if totalMemory < 512*1024*1024 { // 512MB
+	if totalMemory < 256*1024*1024 { // 256MB
+		fmt.Println("Low memory detected.")
+		lightMode = true
 		maxParallelChecks = 10
+		disableUpdateInterval = true
 	}
 }
 
