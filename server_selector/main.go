@@ -437,12 +437,14 @@ func MainLoop(stop <-chan struct{}) {
 			}
 
 			if disableUpdateInterval {
-				// If updateInterval is disabled, just perform one check and sleep
-				if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
-					fmt.Printf("Error during fallback: %v\n", err)
-				}
-				if !interruptibleSleep(checkInterval, stop) {
-					return
+				for {
+					// If updateInterval is disabled, just perform one check and sleep
+					if err := fallbackToWorkingProxyByOrder(sortedProxies); err != nil {
+						fmt.Printf("Error during fallback: %v\n", err)
+					}
+					if !interruptibleSleep(checkInterval, stop) {
+						return
+					}
 				}
 			} else {
 				// Original behavior with updateInterval
